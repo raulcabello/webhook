@@ -293,6 +293,14 @@ RoleTemplate can not be deleted if they are referenced by other RoleTemplates vi
 
 # rbac.authorization.k8s.io/v1 
 
+## ClusterRole 
+
+### Validation Checks
+
+#### Invalid Fields - Update
+Users cannot update or remove the following label after it has been added:
+- authz.management.cattle.io/gr-owner
+
 ## Role 
 
 ### Validation Checks
@@ -300,6 +308,14 @@ RoleTemplate can not be deleted if they are referenced by other RoleTemplates vi
 #### Invalid Fields - Update
 Users cannot update or remove the following label after it has been added:
 - authz.management.cattle.io/gr-owner
+
+## RoleBinding 
+
+### Validation Checks
+
+#### Invalid Fields - Update
+Users cannot update or remove the following label after it has been added:
+- authz.management.cattle.io/grb-owner
 
 ## RoleBinding 
 

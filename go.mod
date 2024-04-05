@@ -3,6 +3,7 @@ module github.com/rancher/webhook
 go 1.22
 
 replace (
+	github.com/rancher/rancher/pkg/apis => github.com/raulcabello/rancher/pkg/apis v0.0.0-20240402093947-f6c79627bf64 // TODO remove this once https://github.com/rancher/rancher/pull/44901 is merged
 	k8s.io/api => k8s.io/api v0.28.6
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.28.6
 	k8s.io/apimachinery => k8s.io/apimachinery v0.28.6
