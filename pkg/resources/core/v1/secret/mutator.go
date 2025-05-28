@@ -1,7 +1,13 @@
 package secret
 
 import (
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha3"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"log"
+	"net/http"
 
 	"github.com/rancher/webhook/pkg/admission"
 	objectsv1 "github.com/rancher/webhook/pkg/generated/objects/core/v1"
@@ -64,7 +70,7 @@ func (m *Mutator) GVR() schema.GroupVersionResource {
 
 // Operations returns list of operations handled by this mutator.
 func (m *Mutator) Operations() []admissionregistrationv1.OperationType {
-	return []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Delete}
+	return []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Delete, admissionregistrationv1.Update}
 }
 
 // MutatingWebhook returns the MutatingWebhook used for this CRD.
@@ -95,29 +101,70 @@ func (m *Mutator) Admit(request *admission.Request) (*admissionv1.AdmissionRespo
 		return m.admitCreate(secret, request)
 	case admissionv1.Delete:
 		return m.admitDelete(secret)
+	case admissionv1.Update:
+		return m.admitUpdate(secret)
+
 	default:
 		return nil, fmt.Errorf("operation type %q not handled", request.Operation)
 	}
 }
 
 func (m *Mutator) admitCreate(secret *corev1.Secret, request *admission.Request) (*admissionv1.AdmissionResponse, error) {
-	if secret.Type != "provisioning.cattle.io/cloud-credential" {
-		return &admissionv1.AdmissionResponse{
-			Allowed: true,
-		}, nil
+	switch secret.Type {
+	case "provisioning.cattle.io/cloud-credential":
+		logrus.Debugf("[secret-mutation] adding creatorID %v to secret: %v", request.UserInfo.Username, secret.Name)
+		newSecret := secret.DeepCopy()
+
+		common.SetCreatorIDAnnotation(request, newSecret)
+
+		response := &admissionv1.AdmissionResponse{}
+		if err := patch.CreatePatch(request.Object.Raw, newSecret, response); err != nil {
+			return nil, fmt.Errorf("failed to create patch: %w", err)
+		}
+		response.Allowed = true
+		return response, nil
+	case "management.cattle.io/user-credential":
+		logrus.Debugf("[secret-mutation] adding password for secret %v", secret.Name)
+		newSecret := secret.DeepCopy()
+		password := newSecret.Data["password"]
+
+		if len(password) == 0 {
+			return &admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Status:  "Failure",
+					Message: "password is empty",
+					Reason:  metav1.StatusReasonBadRequest,
+					Code:    http.StatusBadRequest,
+				},
+			}, nil
+		}
+
+		salt := make([]byte, 32)
+		_, err := rand.Read(salt)
+		if err != nil {
+			log.Fatalf("Failed to generate salt: %v", err)
+		}
+		iterations := 210000
+		keyLength := 32
+		hashedPassword, err := pbkdf2.Key(sha3.New512, string(password), salt, iterations, keyLength)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
+		}
+		newSecret.Data["password"] = hashedPassword
+		newSecret.Data["salt"] = salt
+
+		response := &admissionv1.AdmissionResponse{}
+		if err := patch.CreatePatch(request.Object.Raw, newSecret, response); err != nil {
+			return nil, fmt.Errorf("failed to create patch: %w", err)
+		}
+		response.Allowed = true
+		return response, nil
 	}
 
-	logrus.Debugf("[secret-mutation] adding creatorID %v to secret: %v", request.UserInfo.Username, secret.Name)
-	newSecret := secret.DeepCopy()
-
-	common.SetCreatorIDAnnotation(request, newSecret)
-
-	response := &admissionv1.AdmissionResponse{}
-	if err := patch.CreatePatch(request.Object.Raw, newSecret, response); err != nil {
-		return nil, fmt.Errorf("failed to create patch: %w", err)
-	}
-	response.Allowed = true
-	return response, nil
+	return &admissionv1.AdmissionResponse{
+		Allowed: true,
+	}, nil
 }
 
 // admitDelete checks if there are any roleBindings owned by this secret which provide access to a role granting access to this secret.
@@ -148,6 +195,11 @@ func (m *Mutator) admitDelete(secret *corev1.Secret) (*admissionv1.AdmissionResp
 		}
 
 	}
+	return admission.ResponseAllowed(), nil
+}
+
+func (m *Mutator) admitUpdate(secret *corev1.Secret) (*admissionv1.AdmissionResponse, error) {
+	//TODO
 	return admission.ResponseAllowed(), nil
 }
 
