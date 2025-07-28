@@ -125,6 +125,13 @@ func (a *admitter) Admit(request *admission.Request) (*admissionv1.AdmissionResp
 		}
 	}
 
+	// TODO check reset admin password!
+	//TODO add tests
+
+	if oldUser.Password != newUser.Password {
+		return admission.ResponseBadRequest("password field is deprecated, and can't be changed"), nil
+	}
+
 	return &admissionv1.AdmissionResponse{Allowed: true}, nil
 }
 

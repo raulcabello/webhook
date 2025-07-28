@@ -240,6 +240,21 @@ func Test_Admit(t *testing.T) {
 			},
 			allowed: false,
 		},
+		{
+			name:    "changing an user password is not allowed",
+			oldUser: defaultUser.DeepCopy(),
+			newUser: &v3.User{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: defaultUserName,
+				},
+				Password: "new-password",
+			},
+			requestUserName: requesterUserName,
+			resolverRulesFor: func(string) ([]rbacv1.PolicyRule, error) {
+				return getPods, nil
+			},
+			allowed: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
